@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>AR Space Interceptor</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; -webkit-user-select: none; }
+    body, html { width: 100vw; height: 100vh; overflow: hidden; background: #000; font-family: monospace; }
+    #cam-feed { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; object-fit: cover; z-index: 0; }
+    #webgl-canvas { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 1; pointer-events: none; }
+    #hud { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 2; display: flex; flex-direction: column; justify-content: space-between; padding: 24px; color: #0f0; text-shadow: 0 0 5px #000; }
+    #top-bar { font-size: 20px; font-weight: bold; background: rgba(0,0,0,0.5); padding: 8px 16px; border-left: 4px solid #0f0; width: fit-content; }
+    #crosshair { position: absolute; top: 50%; left: 50%; width: 44px; height: 44px; transform: translate(-50%, -50%); border: 2px solid #0f0; border-radius: 50%; pointer-events: none; transition: transform 0.08s; }
+    #crosshair::after { content: ''; position: absolute; top: 50%; left: 50%; width: 6px; height: 6px; background: #f00; border-radius: 50%; transform: translate(-50%, -50%); }
+    .btn { pointer-events: auto; padding: 18px 36px; background: rgba(0, 40, 0, 0.75); border: 2px solid #0f0; color: #0f0; font-size: 18px; font-weight: bold; border-radius: 8px; }
+    .btn:active { background: #0f0; color: #000; }
+  </style>
+  <script type="importmap">
+    { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+  </script>
+</head>
+<body>
+  <video id="cam-feed" autoplay playsinline muted></video>
+  <canvas id="webgl-canvas"></canvas>
+  <div id="hud">
+    <div id="top-bar">SCORE: <span id="score">0</span> | HP: <span id="hp">100</span> | WAVE: <span id="lvl">1</span></div>
+    <div id="crosshair"></div>
+    <div style="display:flex; justify-content: flex-end; align-items: center;">
+      <button id="btn-start" class="btn">ENGAGE AR SYSTEMS</button>
+      <button id="btn-fire" class="btn" style="display:none; padding: 32px 48px; border-radius: 50%;">FIRE</button>
+    </div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+
+    class GyroController {
+      constructor(camera) {
+        this.camera = camera;
+        this.enabled = false;
+        this.orientData = { alpha: 0, beta: 0, gamma: 0 };
+        this._zee = new THREE.Vector3(0, 0, 1);
+        this._euler = new THREE.Euler();
+        this._q0 = new THREE.Quaternion();
+        this._q1 = new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5));
+
+        window.addEventListener('deviceorientation', (e) => {
+          if (e.alpha !== null) {
+            this.orientData.alpha = e.alpha;
+            this.orientData.beta = e.beta;
+            this.orientData.gamma = e.gamma;
+          }
+        }, true);
+      }
+
+      async initCamera(videoEl) {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+          audio: false
+        });
+        videoEl.srcObject = stream;
+        this.enabled = true;
+      }
+
+      update() {
+        if (!this.enabled) return;
+        const alpha = THREE.MathUtils.degToRad(this.orientData.alpha);
+        const beta = THREE.MathUtils.degToRad(this.orientData.beta);
+        const gamma = THREE.MathUtils.degToRad(this.orientData.gamma);
+        const rawAngle = screen.orientation ? screen.orientation.angle : (window.orientation || 0);
+        const isNativeLandscape = (window.innerWidth > window.innerHeight) && (rawAngle === 0);
+        const orient = isNativeLandscape ? 0 : THREE.MathUtils.degToRad(rawAngle || 90);
+
+        this._euler.set(beta, alpha, -gamma, 'YXZ');
+        this.camera.quaternion.setFromEuler(this._euler);
+        this.camera.quaternion.multiply(this._q1);
+        this.camera.quaternion.multiply(this._q0.setFromAxisAngle(this._zee, -orient));
+      }
+    }
+
+    class EntityManager {
+      constructor(scene, size = 35) {
+        this.pool = [];
+        this.active = [];
+        this._tempVec = new THREE.Vector3();
+        this._up = new THREE.Vector3(0, 1, 0);
+
+        const geo = new THREE.IcosahedronGeometry(1.3, 1);
+        geo.computeBoundingSphere();
+        geo.boundingSphere.radius *= 1.3;
+        const mat = new THREE.MeshBasicMaterial({ color: 0xff3300, wireframe: true });
+
+        for (let i = 0; i < size; i++) {
+          const m = new THREE.Mesh(geo, mat);
+          m.visible = false;
+          m.userData = { active: false, baseDir: new THREE.Vector3(), perp: new THREE.Vector3(), speed: 0, amp: 0, freq: 0, t0: 0 };
+          scene.add(m);
+          this.pool.push(m);
+        }
+      }
+
+      spawn(level, camDir) {
+        const m = this.pool.find(x => !x.userData.active);
+        if (!m) return;
+        const r = 30 + Math.random() * 15;
+        let theta, phi;
+        do {
+          theta = Math.random() * Math.PI * 2;
+          phi = Math.acos(2 * Math.random() - 1);
+          this._tempVec.setFromSphericalCoords(1, phi, theta);
+        } while (this._tempVec.dot(camDir) > 0.65);
+
+        m.position.setFromSphericalCoords(r, phi, theta);
+        const d = m.userData;
+        d.active = true;
+        d.t0 = performance.now() * 0.001;
+        d.speed = 3.5 + level * 1.1;
+        d.amp = level > 1 ? Math.min((level - 1) * 1.5, 5.5) : 0;
+        d.freq = 1.5 + level * 0.25;
+        d.baseDir.copy(m.position).negate().normalize();
+        d.perp.crossVectors(d.baseDir, this._up).normalize();
+        m.visible = true;
+        this.active.push(m);
+      }
+
+      update(dt, elapsed, onBreach) {
+        for (let i = this.active.length - 1; i >= 0; i--) {
+          const m = this.active[i];
+          const d = m.userData;
+          m.position.addScaledVector(d.baseDir, d.speed * dt);
+          if (d.amp > 0) {
+            m.position.addScaledVector(d.perp, Math.cos((elapsed - d.t0) * d.freq) * d.amp * dt);
+          }
+          m.rotation.x += 1.5 * dt;
+          m.rotation.y += 2.0 * dt;
+          if (m.position.lengthSq() <= 4.0) {
+            this.kill(m, i);
+            onBreach(20);
+          }
+        }
+      }
+
+      kill(m, idx = -1) {
+        m.userData.active = false;
+        m.visible = false;
+        const i = idx !== -1 ? idx : this.active.indexOf(m);
+        if (i > -1) this.active.splice(i, 1);
+      }
+
+      reset() { while (this.active.length) this.kill(this.active[0], 0); }
+    }
+
+    const canvas = document.getElementById('webgl-canvas');
+    const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
+    const gyro = new GyroController(camera);
+    const entities = new EntityManager(scene);
+    const raycaster = new THREE.Raycaster();
+    const center = new THREE.Vector2(0, 0);
+    const camDir = new THREE.Vector3();
+    const clock = new THREE.Clock();
+
+    let state = 'MENU', score = 0, hp = 100, level = 1, kills = 0, spawnTimer = 0;
+
+    const updateHUD = () => {
+      document.getElementById('score').innerText = score;
+      document.getElementById('hp').innerText = hp;
+      document.getElementById('lvl').innerText = level;
+    };
+
+    document.getElementById('btn-start').addEventListener('click', async () => {
+      await gyro.initCamera(document.getElementById('cam-feed'));
+      document.getElementById('btn-start').style.display = 'none';
+      document.getElementById('btn-fire').style.display = 'inline-block';
+      score = 0; hp = 100; level = 1; kills = 0;
+      entities.reset();
+      state = 'PLAYING';
+      updateHUD();
+    });
+
+    document.getElementById('btn-fire').addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      if (state !== 'PLAYING') return;
+      const ch = document.getElementById('crosshair');
+      ch.style.transform = 'translate(-50%, -50%) scale(1.35)';
+      setTimeout(() => ch.style.transform = 'translate(-50%, -50%) scale(1)', 80);
+
+      raycaster.setFromCamera(center, camera);
+      const hits = raycaster.intersectObjects(entities.active, false);
+      if (hits.length > 0) {
+        entities.kill(hits[0].object);
+        score += 100 * level;
+        if (++kills >= 10) { kills = 0; level++; }
+        updateHUD();
+      }
+    });
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const dt = Math.min(clock.getDelta(), 0.1);
+      gyro.update();
+      if (state === 'PLAYING') {
+        spawnTimer += dt;
+        if (spawnTimer >= Math.max(0.4, 2.2 - level * 0.25)) {
+          spawnTimer = 0;
+          camera.getWorldDirection(camDir);
+          entities.spawn(level, camDir);
+        }
+        entities.update(dt, clock.getElapsedTime(), (dmg) => {
+          hp = Math.max(0, hp - dmg);
+          updateHUD();
+          if (hp <= 0) {
+            state = 'OVER';
+            const btn = document.getElementById('btn-start');
+            btn.innerText = 'SYSTEM FAILURE - REBOOT';
+            btn.style.display = 'inline-block';
+            document.getElementById('btn-fire').style.display = 'none';
+          }
+        });
+      }
+      renderer.render(scene, camera);
+    }
+    animate();
+  </script>
+</body>
+</html>
