@@ -36,15 +36,12 @@ jobs:
             const file = "android/app/src/main/AndroidManifest.xml";
             let content = fs.readFileSync(file, "utf8");
             
-            // Add Permissions before <application>
             const perms = `
               <uses-permission android:name="android.permission.CAMERA" />
               <uses-feature android:name="android.hardware.camera" />
               <uses-feature android:name="android.hardware.gyroscope" />
             `;
             content = content.replace("<application", perms + "\n    <application");
-            
-            // Lock Landscape Orientation on MainActivity
             content = content.replace("android:name=\".MainActivity\"", "android:name=\".MainActivity\" android:screenOrientation=\"sensorLandscape\"");
             
             fs.writeFileSync(file, content);
@@ -81,15 +78,21 @@ jobs:
           }
           EOF
 
-      - name: Build Android Debug APK
+      - name: Build & Sign Release APK
         run: |
           npx cap sync android
           cd android
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
+          ./gradlew assembleRelease --no-daemon
 
-      - name: Upload APK Artifact
+          # Generate dedicated keystore on the runner
+          keytool -genkeypair -v -keystore release.jks -alias arshooter -keyalg RSA -keysize 2048 -validity 10000 -storepass password123 -keypass password123 -dname "CN=Thambi, OU=800Retail, O=AAG, L=Dubai, C=AE"
+
+          # Sign the release APK with Android apksigner
+          $ANDROID_HOME/build-tools/34.0.0/apksigner sign --ks release.jks --ks-pass pass:password123 --key-pass pass:password123 --out app-release-signed.apk app/build/outputs/apk/release/app-release-unsigned.apk
+
+      - name: Upload Signed APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: AR-Space-Shooter-APK
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: AR-Space-Shooter-Signed-APK
+          path: android/app-release-signed.apk
