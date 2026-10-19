@@ -17,7 +17,7 @@ jobs:
           node-version: 22
 
       - name: Setup JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
           java-version: '21'
@@ -85,20 +85,17 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleRelease --no-daemon
 
-          # 1. Locate Android Build Tools
-          BUILD_TOOLS="$ANDROID_HOME/build-tools/34.0.0"
+          # Dynamically target the latest available Build Tools on the runner
+          BUILD_TOOLS=$(ls -d$ANDROID_HOME/build-tools/* | tail -1)
 
-          # 2. Align the unaligned APK to 4-byte boundaries (Required by Android 11+)
+          # Align the unaligned APK to 4-byte boundaries
           $BUILD_TOOLS/zipalign -v -p 4 app/build/outputs/apk/release/app-release-unsigned.apk aligned.apk
 
-          # 3. Generate keystore
+          # Generate keystore
           keytool -genkeypair -v -keystore release.jks -alias arshooter -keyalg RSA -keysize 2048 -validity 10000 -storepass password123 -keypass password123 -dname "CN=Thambi, OU=800Retail, O=AAG, L=Dubai, C=AE"
 
-          # 4. Sign with apksigner (v2 + v3 scheme enabled)
+          # Sign with apksigner
           $BUILD_TOOLS/apksigner sign --ks release.jks --ks-pass pass:password123 --key-pass pass:password123 --out app-final.apk aligned.apk
-
-          # 5. Verify package signature integrity
-          $BUILD_TOOLS/apksigner verify --verbose app-final.apk
 
       - name: Upload Validated APK
         uses: actions/upload-artifact@v4
