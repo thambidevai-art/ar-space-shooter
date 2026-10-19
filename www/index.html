@@ -3,18 +3,35 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>AR Space Interceptor</title>
+  <title>Cosmic Star Catcher AR</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; -webkit-user-select: none; }
-    body, html { width: 100vw; height: 100vh; overflow: hidden; background: #000; font-family: monospace; }
+    body, html { width: 100vw; height: 100vh; overflow: hidden; background: #000; font-family: 'Comic Sans MS', 'Chalkboard SE', sans-serif; }
     #cam-feed { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; object-fit: cover; z-index: 0; }
     #webgl-canvas { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 1; pointer-events: none; }
-    #hud { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 2; display: flex; flex-direction: column; justify-content: space-between; padding: 24px; color: #0f0; text-shadow: 0 0 5px #000; }
-    #top-bar { font-size: 20px; font-weight: bold; background: rgba(0,0,0,0.5); padding: 8px 16px; border-left: 4px solid #0f0; width: fit-content; }
-    #crosshair { position: absolute; top: 50%; left: 50%; width: 44px; height: 44px; transform: translate(-50%, -50%); border: 2px solid #0f0; border-radius: 50%; pointer-events: none; transition: transform 0.08s; }
-    #crosshair::after { content: ''; position: absolute; top: 50%; left: 50%; width: 6px; height: 6px; background: #f00; border-radius: 50%; transform: translate(-50%, -50%); }
-    .btn { pointer-events: auto; padding: 18px 36px; background: rgba(0, 40, 0, 0.75); border: 2px solid #0f0; color: #0f0; font-size: 18px; font-weight: bold; border-radius: 8px; }
-    .btn:active { background: #0f0; color: #000; }
+    
+    #hud { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 2; display: flex; flex-direction: column; justify-content: space-between; padding: 20px; pointer-events: none; }
+    
+    #top-bar { display: flex; gap: 15px; align-items: center; background: rgba(20, 10, 50, 0.75); padding: 10px 22px; border-radius: 30px; border: 3px solid #00ffff; color: #fff; font-size: 22px; font-weight: bold; width: fit-content; box-shadow: 0 4px 15px rgba(0,255,255,0.4); }
+    .stat-box span { color: #ffeb3b; font-size: 26px; }
+
+    /* Kid-Friendly Glowing Reticle */
+    #crosshair { position: absolute; top: 50%; left: 50%; width: 85px; height: 85px; transform: translate(-50%, -50%); border: 4px dashed #00ffcc; border-radius: 50%; transition: transform 0.1s, border-color 0.15s; box-shadow: 0 0 18px rgba(0,255,204,0.6); }
+    #crosshair::after { content: '★'; position: absolute; top: 50%; left: 50%; font-size: 26px; color: #ffeb3b; transform: translate(-50%, -50%); text-shadow: 0 0 8px #ff9800; }
+    #crosshair.locked { border-color: #ffeb3b; border-style: solid; transform: translate(-50%, -50%) scale(1.2); box-shadow: 0 0 25px #ffeb3b; }
+
+    /* Stage Celebration Banner */
+    #banner { position: absolute; top: 42%; left: 50%; transform: translate(-50%, -50%) scale(0); background: linear-gradient(135deg, #ff00cc, #3333ff); padding: 25px 50px; border-radius: 30px; border: 5px solid #fff; color: #fff; text-align: center; box-shadow: 0 0 40px rgba(255,0,204,0.8); transition: transform 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275); pointer-events: none; }
+    #banner.show { transform: translate(-50%, -50%) scale(1); }
+    #banner h1 { font-size: 42px; color: #ffeb3b; text-shadow: 2px 2px 0 #000; margin-bottom: 8px; }
+    #banner p { font-size: 24px; color: #fff; }
+
+    /* Buttons */
+    #bottom-bar { display: flex; justify-content: space-between; align-items: flex-end; width: 100%; }
+    .btn { pointer-events: auto; padding: 20px 40px; background: linear-gradient(180deg, #ffeb3b, #ff9800); border: 4px solid #fff; color: #220044; font-size: 24px; font-weight: 900; border-radius: 40px; box-shadow: 0 6px 20px rgba(0,0,0,0.5); cursor: pointer; text-transform: uppercase; }
+    .btn:active { transform: scale(0.92); }
+    #btn-fire { display: none; width: 130px; height: 130px; border-radius: 50%; background: radial-gradient(circle, #ff4081, #c51162); color: #fff; font-size: 26px; border: 5px solid #fff; box-shadow: 0 0 25px #ff4081; }
+    #progress-pill { background: rgba(0,0,0,0.6); color: #fff; padding: 12px 24px; border-radius: 25px; border: 2px solid #ffeb3b; font-size: 20px; }
   </style>
   <script type="importmap">
     { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
@@ -23,18 +40,83 @@
 <body>
   <video id="cam-feed" autoplay playsinline muted></video>
   <canvas id="webgl-canvas"></canvas>
+
   <div id="hud">
-    <div id="top-bar">SCORE: <span id="score">0</span> | HP: <span id="hp">100</span> | WAVE: <span id="lvl">1</span></div>
+    <div id="top-bar">
+      <div class="stat-box">⭐ <span id="score">0</span></div>
+      <div class="stat-box">🚀 STAGE <span id="lvl">1</span></div>
+      <div class="stat-box">🛡️ <span id="hp">100</span>%</div>
+    </div>
+
     <div id="crosshair"></div>
-    <div style="display:flex; justify-content: flex-end; align-items: center;">
-      <button id="btn-start" class="btn">ENGAGE AR SYSTEMS</button>
-      <button id="btn-fire" class="btn" style="display:none; padding: 32px 48px; border-radius: 50%;">FIRE</button>
+
+    <div id="banner">
+      <h1 id="banner-title">🎉 STAGE 1 COMPLETE! 🎉</h1>
+      <p id="banner-sub">Awesome Shooting! Get Ready for Next Stage!</p>
+    </div>
+
+    <div id="bottom-bar">
+      <div id="progress-pill">Targets Left: <span id="remaining">8</span></div>
+      <div>
+        <button id="btn-start" class="btn">🚀 START SPACE ADVENTURE!</button>
+        <button id="btn-fire" class="btn">ZAP!</button>
+      </div>
     </div>
   </div>
 
   <script type="module">
     import * as THREE from 'three';
 
+    // 1. Kid-Friendly Synthesizer Audio (Zero external MP3 dependencies)
+    class SoundFX {
+      constructor() { this.ctx = null; }
+      init() { if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)(); }
+      
+      playLaser() {
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator(), gain = this.ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(750, this.ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(220, this.ctx.currentTime + 0.14);
+        gain.gain.setValueAtTime(0.25, this.ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.14);
+        osc.connect(gain); gain.connect(this.ctx.destination);
+        osc.start(); osc.stop(this.ctx.currentTime + 0.14);
+      }
+
+      playPop() {
+        if (!this.ctx) return;
+        const notes = [523.25, 659.25, 783.99, 1046.5]; // C5, E5, G5, C6
+        notes.forEach((freq, i) => {
+          const osc = this.ctx.createOscillator(), gain = this.ctx.createGain();
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(freq, this.ctx.currentTime + i * 0.05);
+          gain.gain.setValueAtTime(0.3, this.ctx.currentTime + i * 0.05);
+          gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + i * 0.05 + 0.18);
+          osc.connect(gain); gain.connect(this.ctx.destination);
+          osc.start(this.ctx.currentTime + i * 0.05);
+          osc.stop(this.ctx.currentTime + i * 0.05 + 0.18);
+        });
+      }
+
+      playFanfare() {
+        if (!this.ctx) return;
+        const melody = [523.25, 659.25, 783.99, 1046.5, 783.99, 1046.5];
+        const times  = [0, 0.12, 0.24, 0.36, 0.52, 0.68];
+        melody.forEach((freq, i) => {
+          const osc = this.ctx.createOscillator(), gain = this.ctx.createGain();
+          osc.type = 'square';
+          osc.frequency.setValueAtTime(freq, this.ctx.currentTime + times[i]);
+          gain.gain.setValueAtTime(0.18, this.ctx.currentTime + times[i]);
+          gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + times[i] + 0.25);
+          osc.connect(gain); gain.connect(this.ctx.destination);
+          osc.start(this.ctx.currentTime + times[i]);
+          osc.stop(this.ctx.currentTime + times[i] + 0.25);
+        });
+      }
+    }
+
+    // 2. Quaternion Gyroscope Controller
     class GyroController {
       constructor(camera) {
         this.camera = camera;
@@ -79,6 +161,44 @@
       }
     }
 
+    // 3. 3D Confetti & Explosion Particle System
+    class ParticleBurst {
+      constructor(scene) {
+        this.bursts = [];
+        this.scene = scene;
+        this.colors = [0xffeb3b, 0xff4081, 0x00e5ff, 0x76ff03, 0xff9100, 0xe040fb];
+        this.geo = new THREE.BoxGeometry(0.35, 0.35, 0.35);
+      }
+
+      explode(position, count = 18) {
+        for (let i = 0; i < count; i++) {
+          const mat = new THREE.MeshBasicMaterial({ color: this.colors[i % this.colors.length] });
+          const p = new THREE.Mesh(this.geo, mat);
+          p.position.copy(position);
+          const vel = new THREE.Vector3((Math.random() - 0.5) * 10, (Math.random() - 0.5) * 10, (Math.random() - 0.5) * 10);
+          this.scene.add(p);
+          this.bursts.push({ mesh: p, vel, life: 1.0 });
+        }
+      }
+
+      update(dt) {
+        for (let i = this.bursts.length - 1; i >= 0; i--) {
+          const b = this.bursts[i];
+          b.life -= dt * 1.4;
+          b.mesh.position.addScaledVector(b.vel, dt);
+          b.mesh.rotation.x += 5 * dt;
+          b.mesh.rotation.y += 5 * dt;
+          b.mesh.scale.setScalar(Math.max(0.01, b.life));
+          if (b.life <= 0) {
+            this.scene.remove(b.mesh);
+            b.mesh.material.dispose();
+            this.bursts.splice(i, 1);
+          }
+        }
+      }
+    }
+
+    // 4. Kid-Friendly Colorful Target Manager
     class EntityManager {
       constructor(scene, size = 35) {
         this.pool = [];
@@ -86,12 +206,24 @@
         this._tempVec = new THREE.Vector3();
         this._up = new THREE.Vector3(0, 1, 0);
 
-        const geo = new THREE.IcosahedronGeometry(1.3, 1);
-        geo.computeBoundingSphere();
-        geo.boundingSphere.radius *= 1.3;
-        const mat = new THREE.MeshBasicMaterial({ color: 0xff3300, wireframe: true });
+        // Fun shapes: Donut, Star-Octahedron, Candy Sphere, Space Cube
+        const geometries = [
+          new THREE.TorusGeometry(1.3, 0.5, 12, 24),
+          new THREE.OctahedronGeometry(1.7, 0),
+          new THREE.SphereGeometry(1.5, 16, 16),
+          new THREE.DodecahedronGeometry(1.6, 0)
+        ];
+        geometries.forEach(g => {
+          g.computeBoundingSphere();
+          g.boundingSphere.radius *= 2.2; // Generous kid-friendly hitbox padding
+        });
+
+        const palette = [0xff4081, 0x00e5ff, 0xffeb3b, 0x76ff03, 0xff9100, 0xd500f9];
 
         for (let i = 0; i < size; i++) {
+          const geo = geometries[i % geometries.length];
+          const color = palette[i % palette.length];
+          const mat = new THREE.MeshToonMaterial({ color, emissive: color, emissiveIntensity: 0.25 });
           const m = new THREE.Mesh(geo, mat);
           m.visible = false;
           m.userData = { active: false, baseDir: new THREE.Vector3(), perp: new THREE.Vector3(), speed: 0, amp: 0, freq: 0, t0: 0 };
@@ -103,23 +235,32 @@
       spawn(level, camDir) {
         const m = this.pool.find(x => !x.userData.active);
         if (!m) return;
-        const r = 30 + Math.random() * 15;
+
+        // Spawn closer (16m to 26m) so targets look big and inviting
+        const r = 16 + Math.random() * 10;
         let theta, phi;
+
+        // Spawn mostly in front of the player (within ~110 degree forward cone) so kids find them easily!
+        let attempts = 0;
         do {
           theta = Math.random() * Math.PI * 2;
           phi = Math.acos(2 * Math.random() - 1);
           this._tempVec.setFromSphericalCoords(1, phi, theta);
-        } while (this._tempVec.dot(camDir) > 0.65);
+          attempts++;
+        } while (this._tempVec.dot(camDir) < 0.25 && attempts < 15);
 
         m.position.setFromSphericalCoords(r, phi, theta);
         const d = m.userData;
         d.active = true;
         d.t0 = performance.now() * 0.001;
-        d.speed = 3.5 + level * 1.1;
-        d.amp = level > 1 ? Math.min((level - 1) * 1.5, 5.5) : 0;
-        d.freq = 1.5 + level * 0.25;
+        
+        // Gentle, slow speed for Stage 1 (1.0 m/s), slowly getting faster each stage
+        d.speed = 0.95 + (level - 1) * 0.32;
+        d.amp = level > 1 ? Math.min((level - 1) * 0.6, 2.5) : 0.35;
+        d.freq = 1.0 + level * 0.15;
         d.baseDir.copy(m.position).negate().normalize();
         d.perp.crossVectors(d.baseDir, this._up).normalize();
+        
         m.visible = true;
         this.active.push(m);
       }
@@ -129,14 +270,14 @@
           const m = this.active[i];
           const d = m.userData;
           m.position.addScaledVector(d.baseDir, d.speed * dt);
-          if (d.amp > 0) {
-            m.position.addScaledVector(d.perp, Math.cos((elapsed - d.t0) * d.freq) * d.amp * dt);
-          }
-          m.rotation.x += 1.5 * dt;
-          m.rotation.y += 2.0 * dt;
-          if (m.position.lengthSq() <= 4.0) {
+          m.position.addScaledVector(d.perp, Math.cos((elapsed - d.t0) * d.freq) * d.amp * dt);
+          m.rotation.x += 1.2 * dt;
+          m.rotation.y += 1.8 * dt;
+
+          // If target reaches player, gentle bounce away
+          if (m.position.lengthSq() <= 6.0) {
             this.kill(m, i);
-            onBreach(20);
+            onBreach(5);
           }
         }
       }
@@ -151,52 +292,101 @@
       reset() { while (this.active.length) this.kill(this.active[0], 0); }
     }
 
+    // 5. Main Game Setup
     const canvas = document.getElementById('webgl-canvas');
     const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
+    scene.add(new THREE.AmbientLight(0xffffff, 1.2));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
+    dirLight.position.set(5, 10, 7);
+    scene.add(dirLight);
+
+    const camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 100);
+    const sfx = new SoundFX();
     const gyro = new GyroController(camera);
-    const entities = new EntityManager(scene);
+    const entities = new EntityManager(scene, 35);
+    const particles = new ParticleBurst(scene);
     const raycaster = new THREE.Raycaster();
     const center = new THREE.Vector2(0, 0);
     const camDir = new THREE.Vector3();
     const clock = new THREE.Clock();
 
-    let state = 'MENU', score = 0, hp = 100, level = 1, kills = 0, spawnTimer = 0;
+    let state = 'MENU', score = 0, hp = 100, level = 1, kills = 0, targetsNeeded = 8, spawnTimer = 0;
+    const crosshairEl = document.getElementById('crosshair');
+    const bannerEl = document.getElementById('banner');
 
     const updateHUD = () => {
       document.getElementById('score').innerText = score;
       document.getElementById('hp').innerText = hp;
       document.getElementById('lvl').innerText = level;
+      document.getElementById('remaining').innerText = Math.max(0, targetsNeeded - kills);
+    };
+
+    const triggerStageCelebration = () => {
+      state = 'CELEBRATING';
+      sfx.playFanfare();
+      
+      // Burst confetti right in front of the camera
+      camera.getWorldDirection(camDir);
+      const confettiPos = camDir.clone().multiplyScalar(10);
+      particles.explode(confettiPos, 45);
+
+      document.getElementById('banner-title').innerText = `🎉 STAGE ${level} CLEAR! 🎉`;
+      document.getElementById('banner-sub').innerText = `Super Star! Get Ready for Stage ${level + 1}!`;
+      bannerEl.classList.add('show');
+
+      // Clear remaining targets and heal shield
+      entities.reset();
+      hp = 100;
+
+      setTimeout(() => {
+        bannerEl.classList.remove('show');
+        level++;
+        kills = 0;
+        targetsNeeded = 6 + level * 2; // 8, 10, 12, 14...
+        state = 'PLAYING';
+        updateHUD();
+      }, 3200);
     };
 
     document.getElementById('btn-start').addEventListener('click', async () => {
+      sfx.init();
       await gyro.initCamera(document.getElementById('cam-feed'));
       document.getElementById('btn-start').style.display = 'none';
       document.getElementById('btn-fire').style.display = 'inline-block';
-      score = 0; hp = 100; level = 1; kills = 0;
+      score = 0; hp = 100; level = 1; kills = 0; targetsNeeded = 8;
       entities.reset();
       state = 'PLAYING';
       updateHUD();
+
+      // Spawn an immediate cluster of 5 targets so kids see targets right away!
+      camera.getWorldDirection(camDir);
+      for (let i = 0; i < 5; i++) entities.spawn(level, camDir);
     });
 
     document.getElementById('btn-fire').addEventListener('touchstart', (e) => {
       e.preventDefault();
       if (state !== 'PLAYING') return;
-      const ch = document.getElementById('crosshair');
-      ch.style.transform = 'translate(-50%, -50%) scale(1.35)';
-      setTimeout(() => ch.style.transform = 'translate(-50%, -50%) scale(1)', 80);
+      sfx.playLaser();
 
       raycaster.setFromCamera(center, camera);
       const hits = raycaster.intersectObjects(entities.active, false);
       if (hits.length > 0) {
-        entities.kill(hits[0].object);
-        score += 100 * level;
-        if (++kills >= 10) { kills = 0; level++; }
+        const hitObj = hits[0].object;
+        particles.explode(hitObj.position, 22);
+        entities.kill(hitObj);
+        sfx.playPop();
+
+        score += 50 * level;
+        kills++;
         updateHUD();
+
+        if (kills >= targetsNeeded) {
+          triggerStageCelebration();
+        }
       }
     });
 
@@ -210,23 +400,27 @@
       requestAnimationFrame(animate);
       const dt = Math.min(clock.getDelta(), 0.1);
       gyro.update();
+      particles.update(dt);
+
       if (state === 'PLAYING') {
+        // Keep up to 8-12 targets on screen simultaneously so kids always have plenty to shoot
+        const maxConcurrent = Math.min(14, 7 + level);
         spawnTimer += dt;
-        if (spawnTimer >= Math.max(0.4, 2.2 - level * 0.25)) {
+        if (spawnTimer >= 0.85 && entities.active.length < maxConcurrent) {
           spawnTimer = 0;
           camera.getWorldDirection(camDir);
           entities.spawn(level, camDir);
         }
+
+        // Highlight reticle when aimed at a target
+        raycaster.setFromCamera(center, camera);
+        const aimingAt = raycaster.intersectObjects(entities.active, false);
+        if (aimingAt.length > 0) crosshairEl.classList.add('locked');
+        else crosshairEl.classList.remove('locked');
+
         entities.update(dt, clock.getElapsedTime(), (dmg) => {
-          hp = Math.max(0, hp - dmg);
+          hp = Math.max(20, hp - dmg); // Never let HP drop below 20% in kid mode so they don't get frustrated
           updateHUD();
-          if (hp <= 0) {
-            state = 'OVER';
-            const btn = document.getElementById('btn-start');
-            btn.innerText = 'SYSTEM FAILURE - REBOOT';
-            btn.style.display = 'inline-block';
-            document.getElementById('btn-fire').style.display = 'none';
-          }
         });
       }
       renderer.render(scene, camera);
