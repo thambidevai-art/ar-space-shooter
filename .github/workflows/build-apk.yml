@@ -78,21 +78,30 @@ jobs:
           }
           EOF
 
-      - name: Build & Sign Release APK
+      - name: Build, Zipalign & Sign APK
         run: |
           npx cap sync android
           cd android
           chmod +x gradlew
           ./gradlew assembleRelease --no-daemon
 
-          # Generate dedicated keystore on the runner
+          # 1. Locate Android Build Tools
+          BUILD_TOOLS="$ANDROID_HOME/build-tools/34.0.0"
+
+          # 2. Align the unaligned APK to 4-byte boundaries (Required by Android 11+)
+          $BUILD_TOOLS/zipalign -v -p 4 app/build/outputs/apk/release/app-release-unsigned.apk aligned.apk
+
+          # 3. Generate keystore
           keytool -genkeypair -v -keystore release.jks -alias arshooter -keyalg RSA -keysize 2048 -validity 10000 -storepass password123 -keypass password123 -dname "CN=Thambi, OU=800Retail, O=AAG, L=Dubai, C=AE"
 
-          # Sign the release APK with Android apksigner
-          $ANDROID_HOME/build-tools/34.0.0/apksigner sign --ks release.jks --ks-pass pass:password123 --key-pass pass:password123 --out app-release-signed.apk app/build/outputs/apk/release/app-release-unsigned.apk
+          # 4. Sign with apksigner (v2 + v3 scheme enabled)
+          $BUILD_TOOLS/apksigner sign --ks release.jks --ks-pass pass:password123 --key-pass pass:password123 --out app-final.apk aligned.apk
 
-      - name: Upload Signed APK Artifact
+          # 5. Verify package signature integrity
+          $BUILD_TOOLS/apksigner verify --verbose app-final.apk
+
+      - name: Upload Validated APK
         uses: actions/upload-artifact@v4
         with:
-          name: AR-Space-Shooter-Signed-APK
-          path: android/app-release-signed.apk
+          name: AR-Space-Shooter-Aligned-APK
+          path: android/app-final.apk
